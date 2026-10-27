@@ -1,6 +1,7 @@
 """Визуализатор графа зависимостей пакетов Rust (Cargo)."""
 
 import argparse
+import base64
 import json
 import re
 import sys
@@ -9,6 +10,7 @@ import urllib.request
 from pathlib import Path
 
 DEFAULT_REPO = "https://index.crates.io"
+MERMAID_SERVICE = "https://mermaid.ink/svg/"
 CRATE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 TEST_NAME_RE = re.compile(r"[A-Z]+")
 MAX_CRATE_NAME_LEN = 64
@@ -298,19 +300,73 @@ def print_order(graph, package):
               + " - для неё правильного порядка не существует")
 
 
+def node(name):
+    """Имя узла для Mermaid.
+
+    Дефис Mermaid может принять за часть стрелки, поэтому для имён
+    с дефисом узел записывается как proc_macro2["proc-macro2"]:
+    слева служебное имя без дефиса, в кавычках - подпись на картинке.
+    """
+    if "-" in name:
+        return f'{name.replace("-", "_")}["{name}"]'
+    return name
+
+
+def to_mermaid(graph):
+    """Переводит граф в текст на языке диаграмм Mermaid."""
+    lines = ["graph TD"]
+    for name, deps in graph.items():
+        if not deps:
+            lines.append(f"    {node(name)}")
+        for dep in deps:
+            lines.append(f"    {node(name)} --> {node(dep)}")
+    return "\n".join(lines) + "\n"
+
+
+def save_svg(mermaid_text, output):
+    """Превращает текст Mermaid в картинку SVG и сохраняет в файл.
+
+    Картинку рисует онлайн-сервис mermaid.ink: текст диаграммы
+    кодируется в base64 и передаётся прямо в адресе запроса,
+    а в ответ приходит готовый SVG.
+    """
+    code = base64.urlsafe_b64encode(mermaid_text.encode("utf-8"))
+    url = MERMAID_SERVICE + code.decode("ascii")
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "cargo-deps-viz (student project)"})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as answer:
+            Path(output).write_bytes(answer.read())
+    except OSError as error:
+        raise ValueError(
+            f"не удалось получить SVG от mermaid.ink: {error}. Текст "
+            f"диаграммы можно открыть вручную на https://mermaid.live"
+        ) from error
+
+
+def visualize(graph, output):
+    """Сохраняет граф в двух видах: текст .mmd и картинку .svg."""
+    mermaid_text = to_mermaid(graph)
+    print(mermaid_text, end="")
+    mmd_file = Path(output).with_suffix(".mmd")
+    mmd_file.write_text(mermaid_text, encoding="utf-8")
+    print(f"Текст Mermaid сохранён в {mmd_file}")
+    save_svg(mermaid_text, output)
+    print(f"Изображение графа сохранено в {output}")
+
+
 def main(argv=None):
-    """Точка входа: строит граф и выводит его или порядок загрузки."""
+    """Точка входа: строит граф, выводит его и сохраняет картинку."""
     args = parse_args(argv)
     try:
         validate_args(args)
         graph = build_graph(args)
+        if args.order:
+            print_order(graph, args.package)
+        visualize(graph, args.output)
     except ValueError as error:
         print(f"Ошибка: {error}", file=sys.stderr)
         return 1
-    if args.order:
-        print_order(graph, args.package)
-    else:
-        print_graph(graph)
     return 0
 
 

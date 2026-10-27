@@ -1,0 +1,19 @@
+graph TD
+    serde_json --> itoa
+    serde_json --> memchr
+    serde_json --> serde
+    serde_json --> serde_core
+    serde_json --> zmij
+    itoa
+    memchr
+    serde --> serde_core
+    serde_core --> serde_derive
+    zmij
+    serde_derive --> proc_macro2["proc-macro2"]
+    serde_derive --> quote
+    serde_derive --> syn
+    proc_macro2["proc-macro2"] --> unicode_ident["unicode-ident"]
+    quote --> proc_macro2["proc-macro2"]
+    syn --> proc_macro2["proc-macro2"]
+    syn --> unicode_ident["unicode-ident"]
+    unicode_ident["unicode-ident"]

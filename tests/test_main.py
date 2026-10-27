@@ -162,5 +162,24 @@ class LoadOrderTest(unittest.TestCase):
         self.assertEqual(sorted(order), ["A", "B", "C", "D"])
 
 
+class MermaidTest(unittest.TestCase):
+    """Проверка этапа 5: текст диаграммы Mermaid."""
+
+    def test_simple_mermaid(self):
+        """Каждая зависимость - стрелка, пакет без зависимостей - узел."""
+        graph = graph_from_file("A", "simple.txt")
+        text = main.to_mermaid(graph)
+        self.assertEqual(text, "graph TD\n"
+                               "    A --> B\n"
+                               "    A --> C\n"
+                               "    B --> C\n"
+                               "    C\n")
+
+    def test_name_with_dash(self):
+        """Дефис убирается из служебного имени, но остаётся в подписи."""
+        text = main.to_mermaid({"proc-macro2": []})
+        self.assertIn('proc_macro2["proc-macro2"]', text)
+
+
 if __name__ == "__main__":
     unittest.main()
