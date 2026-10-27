@@ -8,6 +8,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import main  # noqa: E402
 
+EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
+
+
+def graph_from_file(package, file_name, text=""):
+    """Строит граф по тестовому репозиторию из папки examples."""
+    argv = ["-p", package, "-r", str(EXAMPLES / file_name), "-t",
+            "-f", text]
+    return main.build_graph(main.parse_args(argv))
+
 
 class CheckArgsTest(unittest.TestCase):
     """Проверка обработки ошибок в параметрах."""
@@ -90,6 +99,41 @@ class CollectDataTest(unittest.TestCase):
         """Ответ, который не является индексом, даёт понятную ошибку."""
         with self.assertRaises(ValueError):
             main.choose_version("<html>Not found</html>")
+
+
+class GraphTest(unittest.TestCase):
+    """Проверка этапа 3: BFS, фильтр, циклы, тестовый режим."""
+
+    def test_simple(self):
+        """Транзитивная зависимость C попадает в граф один раз."""
+        graph = graph_from_file("A", "simple.txt")
+        self.assertEqual(graph, {"A": ["B", "C"], "B": ["C"], "C": []})
+
+    def test_bfs_order(self):
+        """Пакеты обходятся по уровням: сначала B, C, D, потом E..."""
+        graph = graph_from_file("A", "big.txt")
+        self.assertEqual(list(graph), list("ABCDEFGHIJ"))
+
+    def test_filter(self):
+        """Пакет с подстрокой фильтра и всё, что только через него, - нет."""
+        graph = graph_from_file("D", "big.txt", text="G")
+        self.assertEqual(graph, {"D": ["H"], "H": []})
+
+    def test_cycle(self):
+        """Цикл A -> B -> C -> A не приводит к зависанию."""
+        graph = graph_from_file("A", "cycle.txt")
+        self.assertEqual(graph["C"], ["A", "D"])
+        self.assertEqual(len(graph), 4)
+
+    def test_unknown_package(self):
+        """Пакета нет в тестовом файле - понятная ошибка."""
+        with self.assertRaises(ValueError):
+            graph_from_file("Z", "big.txt")
+
+    def test_bad_file(self):
+        """Маленькие буквы в тестовом файле - ошибка."""
+        with self.assertRaises(ValueError):
+            graph_from_file("A", "bad.txt")
 
 
 if __name__ == "__main__":

@@ -178,22 +178,94 @@ def fetch_deps(name, repo):
     return direct_deps(version)
 
 
+def read_test_repo(path):
+    """Читает тестовый репозиторий из файла.
+
+    Каждая строка файла: 'ПАКЕТ: ЗАВИСИМОСТЬ ЗАВИСИМОСТЬ ...',
+    например 'A: B C'. Пустые строки и строки с # пропускаются.
+    Возвращает словарь {'A': ['B', 'C'], ...}.
+    """
+    test_graph = {}
+    lines = Path(path).read_text(encoding="utf-8").splitlines()
+    for number, line in enumerate(lines, start=1):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            raise ValueError(f"{path}, строка {number}: нет двоеточия")
+        name, deps = line.split(":", 1)
+        names = [name.strip()] + deps.split()
+        for item in names:
+            if not TEST_NAME_RE.fullmatch(item):
+                raise ValueError(
+                    f"{path}, строка {number}: имя '{item}' должно "
+                    f"состоять из больших латинских букв")
+        test_graph[names[0]] = names[1:]
+    return test_graph
+
+
+def get_deps(name, args, test_graph):
+    """Прямые зависимости пакета: из тестового файла или из сети."""
+    if args.test_mode:
+        return test_graph.get(name, [])
+    return fetch_deps(name, args.repo)
+
+
+def is_filtered(name, text):
+    """Проверяет, нужно ли пропустить пакет (в имени есть подстрока)."""
+    return bool(text) and text in name
+
+
+def bfs(level, graph, args, test_graph):
+    """Обход графа в ширину (BFS), записанный через рекурсию.
+
+    level - пакеты текущего уровня (сначала только сам пакет).
+    graph - словарь уже обработанных пакетов: {пакет: [зависимости]}.
+    Один вызов функции обрабатывает один уровень и вызывает сам себя
+    для следующего уровня. Пакет, который уже есть в graph, второй
+    раз не обрабатывается - поэтому циклы A -> B -> A не зацикливают
+    программу.
+    """
+    next_level = []
+    for name in level:
+        deps = [dep for dep in get_deps(name, args, test_graph)
+                if not is_filtered(dep, args.filter)]
+        graph[name] = deps
+        for dep in deps:
+            if dep not in graph and dep not in level + next_level:
+                next_level.append(dep)
+    if next_level:
+        bfs(next_level, graph, args, test_graph)
+    return graph
+
+
+def build_graph(args):
+    """Строит полный граф зависимостей пакета args.package."""
+    test_graph = None
+    if args.test_mode:
+        test_graph = read_test_repo(args.repo)
+        if args.package not in test_graph:
+            raise ValueError(
+                f"пакета {args.package} нет в тестовом репозитории")
+    return bfs([args.package], {}, args, test_graph)
+
+
+def print_graph(graph):
+    """Выводит граф: каждая строка - пакет и его прямые зависимости."""
+    for name, deps in graph.items():
+        print(f"{name} -> {', '.join(deps) or '(нет зависимостей)'}")
+
+
 def main(argv=None):
-    """Точка входа: проверяет параметры и выводит прямые зависимости."""
+    """Точка входа: проверяет параметры и выводит граф зависимостей."""
     args = parse_args(argv)
     try:
         validate_args(args)
-        if args.test_mode:
-            raise ValueError("тестовый режим появится на этапе 3")
-        deps = fetch_deps(args.package, args.repo)
+        graph = build_graph(args)
     except ValueError as error:
         print(f"Ошибка: {error}", file=sys.stderr)
         return 1
-    print(f"Прямые зависимости пакета {args.package}:")
-    for dep in deps:
-        print(f"  {dep}")
-    if not deps:
-        print("  (нет зависимостей)")
+    print_graph(graph)
     return 0
 
 
