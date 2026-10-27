@@ -32,6 +32,8 @@ def parse_args(argv):
     parser.add_argument("-f", "--filter", default="",
                         help="пропускать пакеты, имя которых содержит "
                              "эту подстроку")
+    parser.add_argument("--order", action="store_true",
+                        help="вывести порядок загрузки зависимостей")
     return parser.parse_args(argv)
 
 
@@ -256,8 +258,48 @@ def print_graph(graph):
         print(f"{name} -> {', '.join(deps) or '(нет зависимостей)'}")
 
 
+def visit(name, graph, order, in_work, cycles):
+    """Обход в глубину для поиска порядка загрузки.
+
+    Пакет попадает в order только после всех своих зависимостей.
+    in_work - пакеты, которые сейчас «в работе» (путь от корня).
+    Если встретили пакет из in_work, значит, нашли цикл.
+    """
+    if name in order:
+        return
+    if name in in_work:
+        cycles.append(in_work[in_work.index(name):] + [name])
+        return
+    in_work.append(name)
+    for dep in graph.get(name, []):
+        visit(dep, graph, order, in_work, cycles)
+    in_work.pop()
+    order.append(name)
+
+
+def load_order(graph, package):
+    """Возвращает порядок загрузки и список найденных циклов."""
+    order = []
+    cycles = []
+    visit(package, graph, order, [], cycles)
+    return order, cycles
+
+
+def print_order(graph, package):
+    """Выводит порядок загрузки зависимостей пакета."""
+    order, cycles = load_order(graph, package)
+    print(f"Порядок загрузки для {package} "
+          f"(сначала зависимости, потом те, кто от них зависит):")
+    for number, name in enumerate(order, start=1):
+        print(f"{number:3}. {name}")
+    for cycle in cycles:
+        print("Внимание: циклическая зависимость "
+              + " -> ".join(cycle)
+              + " - для неё правильного порядка не существует")
+
+
 def main(argv=None):
-    """Точка входа: проверяет параметры и выводит граф зависимостей."""
+    """Точка входа: строит граф и выводит его или порядок загрузки."""
     args = parse_args(argv)
     try:
         validate_args(args)
@@ -265,7 +307,10 @@ def main(argv=None):
     except ValueError as error:
         print(f"Ошибка: {error}", file=sys.stderr)
         return 1
-    print_graph(graph)
+    if args.order:
+        print_order(graph, args.package)
+    else:
+        print_graph(graph)
     return 0
 
 

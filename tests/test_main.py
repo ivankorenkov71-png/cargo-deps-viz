@@ -136,5 +136,31 @@ class GraphTest(unittest.TestCase):
             graph_from_file("A", "bad.txt")
 
 
+class LoadOrderTest(unittest.TestCase):
+    """Проверка этапа 4: порядок загрузки зависимостей."""
+
+    def test_simple_order(self):
+        """C ни от кого не зависит - он первый, A - последний."""
+        graph = graph_from_file("A", "simple.txt")
+        order, cycles = main.load_order(graph, "A")
+        self.assertEqual(order, ["C", "B", "A"])
+        self.assertEqual(cycles, [])
+
+    def test_deps_before_package(self):
+        """Каждый пакет стоит в списке позже всех своих зависимостей."""
+        graph = graph_from_file("A", "big.txt")
+        order, _ = main.load_order(graph, "A")
+        for name, deps in graph.items():
+            for dep in deps:
+                self.assertLess(order.index(dep), order.index(name))
+
+    def test_cycle_found(self):
+        """Цикл A -> B -> C -> A находится и выводится."""
+        graph = graph_from_file("A", "cycle.txt")
+        order, cycles = main.load_order(graph, "A")
+        self.assertEqual(cycles, [["A", "B", "C", "A"]])
+        self.assertEqual(sorted(order), ["A", "B", "C", "D"])
+
+
 if __name__ == "__main__":
     unittest.main()
