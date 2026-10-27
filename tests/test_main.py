@@ -1,12 +1,13 @@
 """Тесты визуализатора графа зависимостей."""
 
+import importlib
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import main  # noqa: E402
+main = importlib.import_module("main")
 
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 

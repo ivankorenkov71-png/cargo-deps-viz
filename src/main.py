@@ -1,4 +1,10 @@
-"""Визуализатор графа зависимостей пакетов Rust (Cargo)."""
+"""Визуализатор графа зависимостей пакетов Rust (Cargo).
+
+Константы:
+    SHORT_NAME_LEN - имена из 1-2 букв лежат в индексе в папках "1/", "2/".
+    MIDDLE_NAME_LEN - имена из 3 букв лежат в папке "3/<первая буква>/".
+    TIMEOUT - сколько секунд ждать ответа от репозитория.
+"""
 
 import argparse
 import base64
@@ -14,9 +20,9 @@ MERMAID_SERVICE = "https://mermaid.ink/svg/"
 CRATE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 TEST_NAME_RE = re.compile(r"[A-Z]+")
 MAX_CRATE_NAME_LEN = 64
-SHORT_NAME_LEN = 2   # имена из 1-2 букв лежат в папках "1/" и "2/"
-MIDDLE_NAME_LEN = 3  # имена из 3 букв лежат в папке "3/<первая буква>/"
-TIMEOUT = 15         # сколько секунд ждать ответа от репозитория
+SHORT_NAME_LEN = 2
+MIDDLE_NAME_LEN = 3
+TIMEOUT = 15
 
 
 def parse_args(argv):
