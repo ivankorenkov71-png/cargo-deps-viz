@@ -1,14 +1,20 @@
 """Визуализатор графа зависимостей пакетов Rust (Cargo)."""
 
 import argparse
+import json
 import re
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 DEFAULT_REPO = "https://index.crates.io"
 CRATE_NAME_RE = re.compile(r"[A-Za-z][A-Za-z0-9_-]*")
 TEST_NAME_RE = re.compile(r"[A-Z]+")
 MAX_CRATE_NAME_LEN = 64
+SHORT_NAME_LEN = 2   # имена из 1-2 букв лежат в папках "1/" и "2/"
+MIDDLE_NAME_LEN = 3  # имена из 3 букв лежат в папке "3/<первая буква>/"
+TIMEOUT = 15         # сколько секунд ждать ответа от репозитория
 
 
 def parse_args(argv):
@@ -90,21 +96,104 @@ def validate_args(args):
     check_filter(args.filter, args.package)
 
 
-def print_config(args):
-    """Выводит все параметры в формате «ключ = значение»."""
-    for key, value in vars(args).items():
-        print(f"{key} = {value}")
+def index_path(name):
+    """Возвращает путь к файлу пакета внутри индекса crates.io.
+
+    Индекс раскладывает пакеты по папкам в зависимости от длины имени:
+    a -> 1/a, ab -> 2/ab, abc -> 3/a/abc, serde -> se/rd/serde.
+    """
+    name = name.lower()
+    if len(name) <= SHORT_NAME_LEN:
+        return f"{len(name)}/{name}"
+    if len(name) == MIDDLE_NAME_LEN:
+        return f"3/{name[0]}/{name}"
+    return f"{name[:2]}/{name[2:4]}/{name}"
+
+
+def download_index(name, repo):
+    """Скачивает файл пакета из репозитория и возвращает его текст."""
+    url = f"{repo.rstrip('/')}/{index_path(name)}"
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "cargo-deps-viz (student project)"})
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT) as answer:
+            return answer.read().decode("utf-8")
+    except urllib.error.HTTPError as error:
+        raise ValueError(
+            f"репозиторий ответил ошибкой {error.code} на {url} "
+            f"(скорее всего, пакета '{name}' не существует)") from error
+    except OSError as error:
+        raise ValueError(
+            f"не удалось подключиться к {url}: {error}") from error
+
+
+def version_key(version):
+    """Превращает строку версии '1.0.130' в (1, 0, 130) для сравнения."""
+    numbers = version.split("+")[0].split("-")[0]
+    return tuple(int(part) for part in numbers.split("."))
+
+
+def choose_version(text):
+    """Выбирает из текста индекса самую новую рабочую версию пакета.
+
+    Каждая строка индекса - это JSON с одной версией пакета.
+    Отозванные версии (yanked) пропускаются, предварительные
+    (например, 2.0.0-beta) берутся, только если других нет.
+    """
+    try:
+        versions = [json.loads(line) for line in text.splitlines()
+                    if line.strip()]
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            "ответ репозитория не похож на индекс Cargo") from error
+    alive = [ver for ver in versions if not ver.get("yanked")]
+    stable = [ver for ver in alive if "-" not in ver["vers"]]
+    candidates = stable or alive
+    if not candidates:
+        raise ValueError("у пакета нет ни одной доступной версии")
+    return max(candidates, key=lambda ver: version_key(ver["vers"]))
+
+
+def direct_deps(version):
+    """Возвращает имена прямых зависимостей одной версии пакета.
+
+    Пропускаются dev-зависимости (нужны только для тестов самого
+    пакета) и необязательные (optional) - Cargo по умолчанию их
+    не скачивает. Если зависимость переименована, у неё есть поле
+    package с настоящим именем пакета.
+    """
+    names = []
+    for dep in version["deps"]:
+        if dep.get("kind") == "dev" or dep.get("optional"):
+            continue
+        name = dep.get("package") or dep["name"]
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def fetch_deps(name, repo):
+    """Получает прямые зависимости пакета из настоящего репозитория."""
+    version = choose_version(download_index(name, repo))
+    return direct_deps(version)
 
 
 def main(argv=None):
-    """Точка входа: разбирает и проверяет параметры."""
+    """Точка входа: проверяет параметры и выводит прямые зависимости."""
     args = parse_args(argv)
     try:
         validate_args(args)
+        if args.test_mode:
+            raise ValueError("тестовый режим появится на этапе 3")
+        deps = fetch_deps(args.package, args.repo)
     except ValueError as error:
         print(f"Ошибка: {error}", file=sys.stderr)
         return 1
-    print_config(args)
+    print(f"Прямые зависимости пакета {args.package}:")
+    for dep in deps:
+        print(f"  {dep}")
+    if not deps:
+        print("  (нет зависимостей)")
     return 0
 
 

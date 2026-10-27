@@ -53,5 +53,44 @@ class CheckArgsTest(unittest.TestCase):
             main.check_filter("json", "serde_json")
 
 
+SAMPLE_INDEX = "\n".join([
+    '{"name": "demo", "vers": "1.0.0", "yanked": false, "deps": []}',
+    '{"name": "demo", "vers": "1.2.0", "yanked": false, "deps": ['
+    '{"name": "itoa", "kind": "normal", "optional": false},'
+    '{"name": "rand", "kind": "dev", "optional": false},'
+    '{"name": "indexmap", "kind": "normal", "optional": true},'
+    '{"name": "my_log", "package": "log", "kind": "normal",'
+    ' "optional": false}]}',
+    '{"name": "demo", "vers": "1.3.0", "yanked": true, "deps": []}',
+    '{"name": "demo", "vers": "2.0.0-beta", "yanked": false, "deps": []}',
+])
+
+
+class CollectDataTest(unittest.TestCase):
+    """Проверка этапа 2: разбор индекса crates.io."""
+
+    def test_index_path(self):
+        """Путь к файлу пакета зависит от длины имени."""
+        self.assertEqual(main.index_path("a"), "1/a")
+        self.assertEqual(main.index_path("ab"), "2/ab")
+        self.assertEqual(main.index_path("syn"), "3/s/syn")
+        self.assertEqual(main.index_path("Serde"), "se/rd/serde")
+
+    def test_choose_version(self):
+        """Берётся самая новая не отозванная и не beta-версия."""
+        version = main.choose_version(SAMPLE_INDEX)
+        self.assertEqual(version["vers"], "1.2.0")
+
+    def test_direct_deps(self):
+        """Dev и optional пропускаются, переименование учитывается."""
+        version = main.choose_version(SAMPLE_INDEX)
+        self.assertEqual(main.direct_deps(version), ["itoa", "log"])
+
+    def test_not_index(self):
+        """Ответ, который не является индексом, даёт понятную ошибку."""
+        with self.assertRaises(ValueError):
+            main.choose_version("<html>Not found</html>")
+
+
 if __name__ == "__main__":
     unittest.main()

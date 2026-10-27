@@ -20,8 +20,21 @@
 - `check_package`, `check_repo`, `check_output`, `check_filter` —
   проверка каждого параметра, при ошибке выбрасывают `ValueError`.
 - `validate_args` — запуск всех проверок.
-- `print_config` — вывод параметров в формате «ключ = значение».
+- `index_path` — путь к файлу пакета в индексе crates.io
+  (`serde` → `se/rd/serde`, `syn` → `3/s/syn`).
+- `download_index` — скачивает файл пакета из репозитория
+  (модуль `urllib` из стандартной библиотеки Python).
+- `choose_version` — выбирает самую новую не отозванную версию.
+- `direct_deps` — прямые зависимости версии без dev- и optional-.
+- `fetch_deps` — всё вместе: имя пакета → список зависимостей.
 - `main` — точка входа.
+
+## Откуда берутся данные
+
+Используется разреженный (sparse) индекс crates.io — тот же, что
+читает сам Cargo. Для каждого пакета там лежит текстовый файл,
+в котором каждая строка — JSON с описанием одной версии и её
+зависимостей, например <https://index.crates.io/se/rd/serde_json>.
 
 ## Запуск и тесты
 
@@ -35,6 +48,7 @@ python3 -m unittest discover tests
 ## Примеры
 
 ```bash
+./run.sh -p serde_json            # прямые зависимости serde_json
 ./run.sh -p serde_json -f derive
 ./run.sh -p A -r examples/simple.txt --test-mode
 ./run.sh -p serde -o graph.png   # Ошибка: нужен .svg
